@@ -1,0 +1,35 @@
+{
+    "name": "cycleia/cakephp-mcp",
+    "description": "CakePHP 4 plugin: the OAuth 2.1 sign-in that lets a site's administrators connect Claude, ChatGPT, Claude Code and Codex to the site's /mcp endpoint.",
+    "type": "cakephp-plugin",
+    "license": "MIT",
+    "keywords": ["cakephp", "mcp", "model context protocol", "oauth", "oauth2"],
+    "require": {
+        "php": ">=8.1",
+        "cakephp/cakephp": "^4.5"
+    },
+    "require-dev": {
+        "cakephp/migrations": "^3.9",
+        "phpunit/phpunit": "^9.6"
+    },
+    "suggest": {
+        "cakephp/migrations": "Creates the plugin's tables: bin/cake migrations migrate -p CakeMcp"
+    },
+    "autoload": {
+        "psr-4": {
+            "CakeMcp\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "CakeMcp\\Test\\": "tests/",
+            "App\\": "tests/test_app/src/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "scripts": {
+        "test": "phpunit"
+    }
+}
