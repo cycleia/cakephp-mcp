@@ -5,10 +5,10 @@ server to an existing site, so the site's **administrators** can connect **Claud
 and mobile), **ChatGPT**, **Claude Code** and **Codex** to `https://<site>/mcp` using their normal
 site login.
 
-The plugin is the OAuth 2.1 authorization server, the token check at `/mcp`, and the approval
-and "AI connections" pages. The MCP tools themselves are each site's own code. Until a site
-plugs its tools in, `/mcp` serves a small built-in server with one tool, `whoami`, so the
-sign-in can be tested from every client first.
+The plugin is the OAuth 2.1 authorization server, the token check at `/mcp`, the approval
+and "AI connections" pages, and a small tool server. The MCP tools themselves are each site's
+own classes. Until a site adds tools, `/mcp` serves one built-in tool, `whoami`, so the sign-in
+can be tested from every client first.
 
 - Authorization code flow with PKCE (S256 only), public clients by default
 - Dynamic Client Registration (RFC 7591)
@@ -136,67 +136,78 @@ All settings live under the `CakeMcp` key. Defaults are in `src/McpConfig.php`.
 | `allowedRedirectHosts` | `claude.ai`, `claude.com`, `chatgpt.com` | https hosts a client may register as redirect URIs. `[]` allows any https host. |
 | `allowLoopbackRedirects` | `true` | Allow `http://localhost`, `127.0.0.1` and `[::1]` redirect URIs (Claude Code, Codex), on any port. |
 | `allowedOrigins` | `[]` | Browser origins, besides the site itself, allowed to call `/mcp`. |
-| `handler` | `null` | The site's MCP server (see below). `null` serves the built-in `whoami` server. |
+| `tools` | `[]` | The site's tools: `ToolInterface` class names or instances (see below). |
+| `instructions` | `null` | Guidance sent to the model when it connects. |
+| `serverName` | `<siteName> MCP` | Server name reported to clients. |
+| `handler` | `null` | A completely custom MCP server instead of the tool server. |
 | `accessTokenTtl` / `refreshTokenTtl` / `codeTtl` / `consentTtl` | 3600 / 2592000 / 600 / 600 | Lifetimes in seconds. |
 | `logScope` | `cake_mcp` | Log scope of the plugin's audit lines. |
 
 ## Adding the site's tools
 
-`/mcp` checks the bearer token, re-loads the user, and then hands the request to `handler`, any
-PSR-15 `RequestHandlerInterface` (class name or instance) or a
-`callable(ServerRequestInterface): ResponseInterface`. The caller is on the request:
+Write one class per tool and list them in `CakeMcp.tools`. `/mcp` then serves them, together
+with `whoami`, over both the current protocol (2026-07-28, stateless) and the older
+`initialize`-based versions.
 
 ```php
+namespace App\Mcp\Tool;
+
 use CakeMcp\Server\McpContext;
+use CakeMcp\Server\Tool;
+use CakeMcp\Server\ToolError;
 
-$context = McpContext::fromRequest($request);
-$context->user;        // the site's user entity, already confirmed as an administrator
-$context->userId;
-$context->clientName;  // "Claude", "ChatGPT", ...
-$context->scopes;
-```
-
-The quickest way to add tools is to extend the built-in server, which already handles both the
-current protocol (2026-07-28, stateless) and the older `initialize`-based versions:
-
-```php
-namespace App\Mcp;
-
-use CakeMcp\Server\DiagnosticServer;
-use CakeMcp\Server\McpContext;
-
-class SiteMcpServer extends DiagnosticServer
+class CountMembers extends Tool
 {
-    protected function tools(): array
+    public function definition(): array
     {
-        return array_merge(parent::tools(), [[
+        return [
             'name' => 'count_members',
-            'description' => 'Number of active members.',
-            'inputSchema' => ['type' => 'object', 'properties' => new \stdClass()],
-            'annotations' => ['readOnlyHint' => true],
-        ]]);
+            'description' => 'Number of active members, optionally in one state.',
+            'inputSchema' => self::schema(['state' => ['type' => 'string', 'description' => 'Two-letter state code']]),
+            'annotations' => self::readOnly(),
+        ];
     }
 
-    protected function callTool(string $name, array $arguments, ?McpContext $context): ?array
+    public function call(array $arguments, McpContext $context): array
     {
-        if ($name === 'count_members') {
-            $count = \Cake\ORM\TableRegistry::getTableLocator()->get('Users')->find()->where(['active' => 1])->count();
-
-            return ['content' => [['type' => 'text', 'text' => (string)$count]]];
+        $state = $this->string($arguments, 'state', false, 2);
+        if ($state !== null && !preg_match('/^[A-Z]{2}$/', $state)) {
+            throw new ToolError('`state` must be a two-letter code such as NY.');
+        }
+        $query = \Cake\ORM\TableRegistry::getTableLocator()->get('Users')->find()->where(['active' => 1]);
+        if ($state !== null) {
+            $query->where(['state' => $state]);
         }
 
-        return parent::callTool($name, $arguments, $context);
+        return $this->result(['count' => $query->count()]);
     }
 }
 ```
 
 ```php
-'CakeMcp' => ['handler' => \App\Mcp\SiteMcpServer::class],
+'CakeMcp' => [
+    'tools' => [\App\Mcp\Tool\CountMembers::class],
+    // Sent to the model when it connects: explain the site's conventions here.
+    'instructions' => 'Times are America/New_York. Post bodies are HTML.',
+],
 ```
 
-A site that wants a full MCP implementation can use the official
-[`mcp/sdk`](https://github.com/modelcontextprotocol/php-sdk) as the handler instead and read the
-caller from `McpContext`.
+- `Tool` gives argument readers (`string`, `int`, `bool`, `enum`, `intList`) that throw a
+  `ToolError` with a clear message, schema and annotation helpers (`schema`, `readOnly`,
+  `writes`), and `result()`, which returns the data both as `structuredContent` and as text.
+- Throw `ToolError` for anything the model should read and correct; it comes back as a
+  result with `isError: true`. Any other exception is logged and reported without details.
+- `$context->user` is the site's user entity, already re-checked as an administrator for this
+  request; `$context->clientName` is "Claude", "ChatGPT", ...
+- Every call is logged under the `cake_mcp` scope: `[cake_mcp] tool call tool=... user=... outcome=...`.
+- Mark tools that change data with `self::writes()` (and `destructive: true` when they hide,
+  remove or overwrite): Claude and ChatGPT use these annotations to decide when to ask before
+  running a tool.
+
+A site that needs a completely different server can set `handler` to any PSR-15
+`RequestHandlerInterface` (for example one built on the official
+[`mcp/sdk`](https://github.com/modelcontextprotocol/php-sdk)) and read the caller with
+`McpContext::fromRequest($request)`.
 
 ## Client behaviour
 

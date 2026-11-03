@@ -54,11 +54,17 @@ final class McpConfig
         // Browser origins, besides the site itself, allowed to call /mcp.
         'allowedOrigins' => [],
 
-        // The site's MCP server: a RequestHandlerInterface class name or instance, or
-        // callable(ServerRequestInterface): ResponseInterface. null serves the built-in
-        // diagnostic server, which has a single `whoami` tool.
+        // The site's tools: ToolInterface class names or instances, served by ToolServer
+        // together with the built-in `whoami`.
+        'tools' => [],
+        // Guidance for the model, sent in initialize/server/discover. Explain the site's
+        // conventions here (content format, time zone, what the tools cannot do).
+        'instructions' => null,
+        // A completely custom MCP server instead of ToolServer: a RequestHandlerInterface class
+        // name or instance, or callable(ServerRequestInterface): ResponseInterface. With neither
+        // this nor `tools`, /mcp serves only `whoami`.
         'handler' => null,
-        // Name and version reported by the built-in diagnostic server.
+        // Server name reported to clients. Defaults to "<siteName> MCP".
         'serverName' => null,
 
         'accessTokenTtl' => 3600,

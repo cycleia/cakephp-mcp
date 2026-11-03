@@ -8,6 +8,7 @@ use CakeMcp\Http\OAuthException;
 use CakeMcp\McpConfig;
 use CakeMcp\Server\DiagnosticServer;
 use CakeMcp\Server\McpContext;
+use CakeMcp\Server\ToolServer;
 use CakeMcp\Service\Audit;
 use CakeMcp\Service\ClientService;
 use CakeMcp\Service\GrantService;
@@ -273,7 +274,7 @@ class CakeMcpMiddleware implements MiddlewareInterface
     {
         $handler = $config->get('handler');
         if ($handler === null) {
-            return new DiagnosticServer();
+            return (array)$config->get('tools', []) === [] ? new DiagnosticServer() : new ToolServer(null, $config);
         }
         if ($handler instanceof RequestHandlerInterface) {
             return $handler;
