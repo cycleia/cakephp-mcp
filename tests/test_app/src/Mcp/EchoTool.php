@@ -32,6 +32,9 @@ class EchoTool extends Tool
             throw new \LogicException('secret internal detail');
         }
 
-        return $this->result(['word' => $word, 'user' => $context->userId], 'Echoed.');
+        // Site code that builds URLs must work inside tools.
+        $login = \Cake\Routing\Router::url(['controller' => 'Pages', 'action' => 'login', '_full' => true]);
+
+        return $this->result(['word' => $word, 'user' => $context->userId, 'login' => $login], 'Echoed.');
     }
 }

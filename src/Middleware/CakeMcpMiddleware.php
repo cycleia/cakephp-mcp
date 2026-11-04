@@ -3,7 +3,11 @@ declare(strict_types=1);
 
 namespace CakeMcp\Middleware;
 
+use Cake\Core\PluginApplicationInterface;
 use Cake\Http\Response;
+use Cake\Http\ServerRequest;
+use Cake\Routing\Router;
+use Cake\Routing\RoutingApplicationInterface;
 use CakeMcp\Http\OAuthException;
 use CakeMcp\McpConfig;
 use CakeMcp\Server\DiagnosticServer;
@@ -38,6 +42,17 @@ use Throwable;
 class CakeMcpMiddleware implements MiddlewareInterface
 {
     private const CORS_HEADERS = 'Authorization, Content-Type, MCP-Protocol-Version, Mcp-Method, Mcp-Name';
+
+    private ?RoutingApplicationInterface $app;
+
+    /**
+     * @param \Cake\Routing\RoutingApplicationInterface|null $app The application, to load its routes
+     *   before the site's tools run (this middleware runs before RoutingMiddleware).
+     */
+    public function __construct(?RoutingApplicationInterface $app = null)
+    {
+        $this->app = $app;
+    }
 
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
@@ -251,9 +266,30 @@ class CakeMcpMiddleware implements MiddlewareInterface
             );
         }
 
-        $response = $this->siteHandler($config)->handle($request->withAttribute(McpContext::ATTRIBUTE, $context));
+        $request = $request->withAttribute(McpContext::ATTRIBUTE, $context);
+        $this->prepareRouter($request);
+        $response = $this->siteHandler($config)->handle($request);
 
         return $this->mcpCors($response, $allowedOrigin);
+    }
+
+    /**
+     * Tools often call site code that builds URLs (Router::url(), email templates). /mcp is
+     * answered before RoutingMiddleware, so load the app's routes and set the request the way
+     * RoutingMiddleware (and the CLI, for commands) would.
+     */
+    private function prepareRouter(ServerRequestInterface $request): void
+    {
+        if ($this->app !== null && count(Router::getRouteCollection()->routes()) === 0) {
+            $builder = Router::createRouteBuilder('/');
+            $this->app->routes($builder);
+            if ($this->app instanceof PluginApplicationInterface) {
+                $this->app->pluginRoutes($builder);
+            }
+        }
+        if ($request instanceof ServerRequest) {
+            Router::setRequest($request);
+        }
     }
 
     private function mcpCors(ResponseInterface $response, ?string $origin): ResponseInterface

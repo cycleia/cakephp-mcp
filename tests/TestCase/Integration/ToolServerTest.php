@@ -43,7 +43,7 @@ class ToolServerTest extends OAuthTestCase
     public function testCallReturnsStructuredContent(): void
     {
         $result = $this->callEcho($this->accessToken(), ['word' => 'hello']);
-        $this->assertSame(['word' => 'hello', 'user' => '1'], $result['structuredContent']);
+        $this->assertSame(['word' => 'hello', 'user' => '1', 'login' => 'https://site.test/login'], $result['structuredContent']);
         $this->assertStringStartsWith('Echoed.', $result['content'][0]['text']);
         $this->assertArrayNotHasKey('isError', $result);
     }

@@ -5,8 +5,10 @@ namespace CakeMcp;
 
 use Cake\Console\CommandCollection;
 use Cake\Core\BasePlugin;
+use Cake\Core\PluginApplicationInterface;
 use Cake\Http\MiddlewareQueue;
 use Cake\Routing\Middleware\RoutingMiddleware;
+use Cake\Routing\RoutingApplicationInterface;
 use Cake\Routing\RouteBuilder;
 use CakeMcp\Command\McpClientsCommand;
 use CakeMcp\Command\McpPurgeCommand;
@@ -21,7 +23,17 @@ class Plugin extends BasePlugin
 {
     protected $name = 'CakeMcp';
 
-    protected $bootstrapEnabled = false;
+    /**
+     * The application, kept from bootstrap() so the middleware can load its routes for tools.
+     *
+     * @var \Cake\Core\PluginApplicationInterface|null
+     */
+    private $app = null;
+
+    public function bootstrap(PluginApplicationInterface $app): void
+    {
+        $this->app = $app;
+    }
 
     /**
      * The approval and connections pages. They are ordinary pages: they need the site's login
@@ -49,7 +61,7 @@ class Plugin extends BasePlugin
      */
     public function middleware(MiddlewareQueue $middlewareQueue): MiddlewareQueue
     {
-        $middleware = new CakeMcpMiddleware();
+        $middleware = new CakeMcpMiddleware($this->app instanceof RoutingApplicationInterface ? $this->app : null);
         try {
             $middlewareQueue->insertBefore(RoutingMiddleware::class, $middleware);
         } catch (LogicException $e) {
